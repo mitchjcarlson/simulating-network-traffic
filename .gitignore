@@ -33,3 +33,10 @@ nosetests.xml
 .mr.developer.cfg
 .project
 .pydevproject
+
+# Output Files
+*.out
+*.output
+
+# Temp Files
+*.tmp
