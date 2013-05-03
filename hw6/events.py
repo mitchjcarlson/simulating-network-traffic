@@ -28,19 +28,6 @@ class Event(object):
     def __str__(self):
         return "%s { time : %s , customer : %s }" % (type(self).__name__, self.time, self.customer)
 
-class RandomEventMeta(type):
-
-    rng = iter_random()
-
-    def random(cls, current_time, *args, **kwargs):
-        inter_arrive_time = next(cls.rng)
-        event_time = inter_arrive_time + current_time
-        return cls(event_time, *args, **kwargs)
-
-class RandomEvent(Event):
-
-    __metaclass__ = RandomEventMeta
-
 class EventList(object):
 
     def __init__(self):
