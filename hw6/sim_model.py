@@ -54,6 +54,8 @@ class Server(object):
 
 class System(object):
 
+    INFINITE_QUEUE = None
+
     def __init__(self, queue_size, servers):
         self.queue = deque([], queue_size)
         self.servers = servers
@@ -73,7 +75,7 @@ class System(object):
             return True
 
     def get_waiting_customer(self, time):
-        if len(self.queue) is self.queue.maxlen:
+        if len(self.queue) > 0:
             customer = self.queue.popleft()
             customer.wait_end = time
             return customer
