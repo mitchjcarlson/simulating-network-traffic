@@ -1,13 +1,14 @@
 #-------------------------------------------------------------------------------
-# Name:        <filename.py>
+# Name:        simulation.py
 # Scenario:    <describe scenario for simulation>
 #
 # Model:       <describe model>
 
-# Author:      <your name>
+# Author:      Brendan Sweeny, Derek McLean, Mitch Carlson
 #
-# Created:     <yyyy-mm-dd>
+# Created:     2013-05-13
 #-------------------------------------------------------------------------------
+
 #!/usr/bin/env python
 
 ## Model components ------------------------------------------------------------
@@ -21,24 +22,26 @@ class Source(Process):
     """
     Randomly generates bursts
     """
-    def generate(self, meanTBA): # generates bursts
+
+    def generate(self, meanTBA):  # generates bursts
         i = 0
         while True:
             # initialize burst at random time in future with random duration
-            burst = Burst(name = "Burst %s" % i, sim = self.sim)
+            burst = Burst(name="Burst %s" % i, sim=self.sim)
 
             # generate next burst time
             # yield to next burst time
             # arrival time of burst a Poisson distr
             interarrival_time = expovariate(1.0 / meanTBA)
-            yield hold, self, interarrival_time # hold suspends until interarrival time has passed
+            yield hold, self, interarrival_time  # hold suspends until interarrival time has passed
+            print "%s arrived at %s" % (self.name, self.sim.now())
 
             # generate duration
             # duration Pareto
             duration = 1
 
             # activate burst with a duration and load balancer
-            activate(burst, burst.visit(duration))
+            self.sim.activate(burst, burst.visit(duration))
 
             i += 1
 
@@ -50,7 +53,8 @@ class Burst(Process):
     """
 
     def visit(self, duration):
-        yield put, self, sim.self.load_balancer, duration # offer a duration to load_balancer
+        print "Add %s packets to load balancer" % duration
+        yield put, self, self.sim.load_balancer, duration  # offer a duration to load_balancer
 
 
 class Host(Process):
@@ -61,7 +65,8 @@ class Host(Process):
     def process(self, num_packets):
         while True:
             # pull packets from load balancer
-            yield get, self, sim.self.load_balancer, num_packets
+            yield get, self, self.sim.load_balancer, num_packets
+            print "[%s]: Process %s packets in load balancer at %s" % (self.name, num_packets, self.sim.now())
             # generate service time
             process_time = num_packets
             # stay busy until service time expires
@@ -71,12 +76,11 @@ class Host(Process):
 class Model(Simulation):
 
     def __init__(self,
-                name,
-                mean_packet_arrival,
-                load_balancer_capacity,
-                number_hosts,
-                host_process_capacity
-            ):
+                 name,
+                 mean_packet_arrival,
+                 load_balancer_capacity,
+                 number_hosts,
+                 host_process_capacity):
         super(Model, self).__init__()
         self.name = name
         self.mean_packet_arrival = mean_packet_arrival
@@ -89,21 +93,21 @@ class Model(Simulation):
         self.initialize()
 
         # Represents queue in load balancer
-                                # 
         self.load_balancer = Level(name='load_balancer', unitName='packet',
-            capacity=self.load_balancer_capacity, initialBuffered=0,
-            putQType=FIFO, getQType=FIFO,
-            monitored=False, monitorType=Monitor,
-            sim=self)
-        burst_source = Source(name='Source', sim = self)
-        self.activate(burst_source, burst_source.generate(meanTBA=self.mean_packet_arrival), 
-                                                          at=start_time) # priority is now
-
-        self.simulate(until=end_time)
+                                   capacity=self.load_balancer_capacity,
+                                   initialBuffered=0,
+                                   putQType=FIFO, getQType=FIFO,
+                                   monitored=False, monitorType=Monitor,
+                                   sim=self)
+        burst_source = Source(name='Source', sim=self)
+        self.activate(burst_source, burst_source.generate(meanTBA=self.mean_packet_arrival),
+                      at=start_time)  # priority is now
 
         for i in xrange(self.number_hosts):
-            host = Host(name="Host %s" % i, sim = self)
-            self.activate(host, host.process(self.num_packets))
+            host = Host(name="Host %s" % i, sim=self)
+            self.activate(host, host.process(self.host_process_capacity))
+
+        self.simulate(until=end_time)
 
 ## Experiment data ---------------------------------------------------------
 
@@ -113,10 +117,12 @@ number_hosts = 3
 host_process_capacity = 15
 
 start_time = 0.0
-end_time = 86400000 # number of milliseconds in a day
+end_time = 86400000  # number of milliseconds in a day
+
 
 def main():
     ## Experiment --------------------------------------------------------------
+    seed(9999)
 
     myModel = Model(name="Experiment 1",
                     mean_packet_arrival=mean_packet_arrival,
