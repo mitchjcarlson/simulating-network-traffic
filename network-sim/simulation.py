@@ -37,7 +37,7 @@ class Source(Process):
             print "%s arrived at %s" % (self.name, self.sim.now())
 
             # generate duration
-            # duration Pareto
+            # Pareto distribution for burst durtion
             duration = paretovariate(packet_duration_shape) + min_packet_duration
 
             # activate burst with a duration and load balancer
@@ -54,7 +54,15 @@ class Burst(Process):
 
     def visit(self, duration):
         print "Add %s packets to load balancer" % duration
+        # start duration timer
+        burst = now()
+
         yield put, self, self.sim.load_balancer, duration  # offer a duration to load_balancer
+
+        # end duration timer
+        duration = now() - burst  # time passed durring burst
+        # record duration
+        burst_duration_monitor.observe(duration)
 
 
 class Host(Process):
@@ -92,6 +100,8 @@ class Model(Simulation):
         return
 
     def runModel(self, start_time, end_time):
+        # monitor the burst duration
+        burst_duration_monitor = Monitor(name='Pareto distribution')
         self.initialize()
 
         # Represents queue in load balancer
@@ -113,6 +123,10 @@ class Model(Simulation):
             self.activate(host, host.process(self.host_process_capacity))
 
         self.simulate(until=end_time)
+
+        # print burst statistics
+        for i in xrange(burst_duration_monitor):
+            print 'Durration {}'.format(burst_duration_monitor[i])
 
 ## Experiment data ---------------------------------------------------------
 
