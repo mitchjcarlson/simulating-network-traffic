@@ -13,7 +13,7 @@
 
 ## Model components ------------------------------------------------------------
 from SimPy.Simulation import *
-from random import expovariate, seed
+from random import expovariate, paretovariate, seed
 
 ## Model -----------------------------------------------------------------------
 
@@ -23,7 +23,7 @@ class Source(Process):
     Randomly generates bursts
     """
 
-    def generate(self, meanTBA):  # generates bursts
+    def generate(self, meanTBA, min_packet_duration, packet_duration_shape):  # generates bursts
         i = 0
         while True:
             # initialize burst at random time in future with random duration
@@ -38,7 +38,7 @@ class Source(Process):
 
             # generate duration
             # duration Pareto
-            duration = 1
+            duration = paretovariate(packet_duration_shape) + min_packet_duration
 
             # activate burst with a duration and load balancer
             self.sim.activate(burst, burst.visit(duration))
@@ -78,6 +78,8 @@ class Model(Simulation):
     def __init__(self,
                  name,
                  mean_packet_arrival,
+                 min_packet_duration,
+                 packet_duration_shape,
                  load_balancer_capacity,
                  number_hosts,
                  host_process_capacity):
@@ -100,7 +102,10 @@ class Model(Simulation):
                                    monitored=False, monitorType=Monitor,
                                    sim=self)
         burst_source = Source(name='Source', sim=self)
-        self.activate(burst_source, burst_source.generate(meanTBA=self.mean_packet_arrival),
+        self.activate(burst_source,
+                      burst_source.generate(meanTBA=self.mean_packet_arrival,
+                                            min_packet_duration=min_packet_duration,
+                                            packet_duration_shape=packet_duration_shape),
                       at=start_time)  # priority is now
 
         for i in xrange(self.number_hosts):
@@ -112,9 +117,12 @@ class Model(Simulation):
 ## Experiment data ---------------------------------------------------------
 
 mean_packet_arrival = 100   # average interarrival time of 100 milliseconds
+min_packet_duration = 40
+packet_duration_shape = 1.0
+
 load_balancer_capacity = 'unbounded'
-number_hosts = 3
-host_process_capacity = 15
+number_hosts = 20
+host_process_capacity = 150
 
 start_time = 0.0
 end_time = 86400000  # number of milliseconds in a day
@@ -126,6 +134,8 @@ def main():
 
     myModel = Model(name="Experiment 1",
                     mean_packet_arrival=mean_packet_arrival,
+                    min_packet_duration=min_packet_duration,
+                    packet_duration_shape=packet_duration_shape,
                     load_balancer_capacity=load_balancer_capacity,
                     number_hosts=number_hosts,
                     host_process_capacity=host_process_capacity)
