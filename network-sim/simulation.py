@@ -1,8 +1,9 @@
 #-------------------------------------------------------------------------------
 # Name:        simulation.py
-# Scenario:    <describe scenario for simulation>
+# Scenario:    Modeling network traffic to a group of hosts and a load balancer.
 #
-# Model:       <describe model>
+# Model:       Uses a Poisson-Pareto burst process with a single queue and
+#              multiple servers
 
 # Author:      Brendan Sweeny, Derek McLean, Mitch Carlson
 #
@@ -14,6 +15,7 @@
 ## Model components ------------------------------------------------------------
 from SimPy.Simulation import *
 from random import expovariate, paretovariate, seed
+from math import ceil
 
 ## Model -----------------------------------------------------------------------
 
@@ -38,7 +40,7 @@ class Source(Process):
 
             # generate duration
             # Pareto distribution for burst durtion
-            duration = paretovariate(packet_duration_shape) + min_packet_duration
+            duration = ceil(paretovariate(packet_duration_shape)) + min_packet_duration
 
             # activate burst with a duration and load balancer
             self.sim.activate(burst, burst.visit(duration))
@@ -59,10 +61,10 @@ class Burst(Process):
 
         yield put, self, self.sim.load_balancer, duration  # offer a duration to load_balancer
 
+        self.sim.burst_duration_monitor.observe(duration)
         # end duration timer
-        duration = now() - burst  # time passed durring burst
+        # duration = now() - burst  # time passed durring burst
         # record duration
-        burst_duration_monitor.observe(duration)
 
 
 class Host(Process):
@@ -101,7 +103,7 @@ class Model(Simulation):
 
     def runModel(self, start_time, end_time):
         # monitor the burst duration
-        burst_duration_monitor = Monitor(name='Pareto distribution')
+        self.burst_duration_monitor = Monitor(name='Pareto distribution', sim=self)
         self.initialize()
 
         # Represents queue in load balancer
@@ -125,8 +127,11 @@ class Model(Simulation):
         self.simulate(until=end_time)
 
         # print burst statistics
-        for i in xrange(burst_duration_monitor):
-            print 'Durration {}'.format(burst_duration_monitor[i])
+        for i in xrange(len(self.burst_duration_monitor)):
+            print 'Duration {}'.format(self.burst_duration_monitor[i])
+
+        result = self.burst_duration_monitor.count(), self.burst_duration_monitor.mean()
+        print("Average duration of %3d bursts was %5.3f milliseconds." % result)
 
 ## Experiment data ---------------------------------------------------------
 
@@ -139,7 +144,7 @@ number_hosts = 20
 host_process_capacity = 150
 
 start_time = 0.0
-end_time = 86400000  # number of milliseconds in a day
+end_time = 3600000  #86400000  # number of milliseconds in a day
 
 
 def main():
