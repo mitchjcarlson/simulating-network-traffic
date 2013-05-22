@@ -16,6 +16,8 @@
 from SimPy.Simulation import *
 from random import expovariate, paretovariate, seed
 from math import ceil
+import json
+import sys
 
 ## Model -----------------------------------------------------------------------
 
@@ -25,7 +27,11 @@ class Source(Process):
     Randomly generates bursts
     """
 
-    def generate(self, meanTBA, min_packet_duration, packet_duration_shape):  # generates bursts
+    def generate(self, packet_params):  # generates bursts
+        meanTBA = packet_params["mean-arrival"]
+        min_packet_duration = packet_params["min-duration"]
+        packet_duration_concentration = packet_params["duration-concentration"]
+
         i = 0
         while True:
             # initialize burst at random time in future with random duration
@@ -40,7 +46,7 @@ class Source(Process):
 
             # generate duration
             # Pareto distribution for burst durtion
-            duration = ceil(paretovariate(packet_duration_shape)) + min_packet_duration
+            duration = ceil(paretovariate(packet_duration_concentration)) + min_packet_duration
 
             # activate burst with a duration and load balancer
             self.sim.activate(burst, burst.visit(duration))
@@ -56,15 +62,9 @@ class Burst(Process):
 
     def visit(self, duration):
         print "Add %s packets to load balancer" % duration
-        # start duration timer
-        burst = now()
-
         yield put, self, self.sim.load_balancer, duration  # offer a duration to load_balancer
 
         self.sim.burst_duration_monitor.observe(duration)
-        # end duration timer
-        # duration = now() - burst  # time passed durring burst
-        # record duration
 
 
 class Host(Process):
@@ -85,20 +85,12 @@ class Host(Process):
 
 class Model(Simulation):
 
-    def __init__(self,
-                 name,
-                 mean_packet_arrival,
-                 min_packet_duration,
-                 packet_duration_shape,
-                 load_balancer_capacity,
-                 number_hosts,
-                 host_process_capacity):
+    def __init__(self, name, packet_params, load_balancer_capacity, host_params):
         super(Model, self).__init__()
         self.name = name
-        self.mean_packet_arrival = mean_packet_arrival
+        self.packet_params = packet_params
         self.load_balancer_capacity = load_balancer_capacity
-        self.number_hosts = number_hosts
-        self.host_process_capacity = host_process_capacity
+        self.host_params = host_params
         return
 
     def runModel(self, start_time, end_time):
@@ -115,14 +107,12 @@ class Model(Simulation):
                                    sim=self)
         burst_source = Source(name='Source', sim=self)
         self.activate(burst_source,
-                      burst_source.generate(meanTBA=self.mean_packet_arrival,
-                                            min_packet_duration=min_packet_duration,
-                                            packet_duration_shape=packet_duration_shape),
+                      burst_source.generate(self.packet_params),
                       at=start_time)  # priority is now
 
-        for i in xrange(self.number_hosts):
+        for i in xrange(self.host_params["count"]):
             host = Host(name="Host %s" % i, sim=self)
-            self.activate(host, host.process(self.host_process_capacity))
+            self.activate(host, host.process(self.host_params["capacity"]))
 
         self.simulate(until=end_time)
 
@@ -133,33 +123,28 @@ class Model(Simulation):
         result = self.burst_duration_monitor.count(), self.burst_duration_monitor.mean()
         print("Average duration of %3d bursts was %5.3f milliseconds." % result)
 
-## Experiment data ---------------------------------------------------------
-
-mean_packet_arrival = 100   # average interarrival time of 100 milliseconds
-min_packet_duration = 40
-packet_duration_shape = 1.0
-
-load_balancer_capacity = 'unbounded'
-number_hosts = 20
-host_process_capacity = 150
-
-start_time = 0.0
-end_time = 3600000  #86400000  # number of milliseconds in a day
-
 
 def main():
-    ## Experiment --------------------------------------------------------------
-    seed(9999)
+    if len(sys.argv) < 3:
+        print "usage: {0} <experiment-name> <parameter file>".format(sys.argv[0])
+        sys.exit("Must specifiy parameter file!")
 
-    myModel = Model(name="Experiment 1",
-                    mean_packet_arrival=mean_packet_arrival,
-                    min_packet_duration=min_packet_duration,
-                    packet_duration_shape=packet_duration_shape,
-                    load_balancer_capacity=load_balancer_capacity,
-                    number_hosts=number_hosts,
-                    host_process_capacity=host_process_capacity)
-    myModel.runModel(start_time, end_time)
-    print myModel.now()
+    ## Experiment data ---------------------------------------------------------
+    name = sys.argv[1]
+    with open(sys.argv[2]) as parameter_file:
+        params = json.load(parameter_file)
+        time = params["time"]
+
+    ## Experiment --------------------------------------------------------------
+        if params["seed"]:
+            seed(params["seed"])
+
+        myModel = Model(name=name,
+                        packet_params=params["packet"],
+                        load_balancer_capacity=params["load-balancer-capacity"],
+                        host_params=params["host"])
+        myModel.runModel(time["start"], time["end"])
+        print myModel.now()
 
     ## Analysis ----------------------------------------------------------------
 

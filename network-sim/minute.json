@@ -1,0 +1,17 @@
+{
+    "packet" : {
+        "mean-arrival" : 100,
+        "min-duration" : 40,
+        "duration-concentration" : 1.0
+    },
+    "load-balancer-capacity" : "unbounded",
+    "host" : {
+        "count" : 3,
+        "capacity" : 300
+    },
+    "time" : {
+        "start" : 0.0,
+        "end" : 30000
+    },
+    "seed" : 9999
+}
