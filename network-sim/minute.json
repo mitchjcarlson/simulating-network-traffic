@@ -4,7 +4,7 @@
         "min-duration" : 40,
         "duration-concentration" : 1.0
     },
-    "load-balancer-capacity" : "unbounded",
+    "load-balancer-capacity" : 100,
     "host" : {
         "count" : 3,
         "capacity" : 300

@@ -27,7 +27,7 @@ class Source(Process):
     Randomly generates bursts
     """
 
-    def generate(self, packet_params):  # generates bursts
+    def generate(self, packet_params, packetDropMonitor):  # generates bursts
         meanTBA = packet_params["mean-arrival"]
         min_packet_duration = packet_params["min-duration"]
         packet_duration_concentration = packet_params["duration-concentration"]
@@ -49,7 +49,7 @@ class Source(Process):
             duration = ceil(paretovariate(packet_duration_concentration)) + min_packet_duration
 
             # activate burst with a duration and load balancer
-            self.sim.activate(burst, burst.visit(duration))
+            self.sim.activate(burst, burst.visit(duration, packetDropMonitor))
 
             i += 1
 
@@ -60,11 +60,20 @@ class Burst(Process):
     Has a random, fixed duration.
     """
 
-    def visit(self, duration):
+    def visit(self, duration, packetDropMonitor):
         print "Add %s packets to load balancer" % duration
-        yield put, self, self.sim.load_balancer, duration  # offer a duration to load_balancer
+        capacity = self.sim.load_balancer.capacity
+        amount = self.sim.load_balancer.amount
+        sendPackets = capacity-amount
 
-        self.sim.burst_duration_monitor.observe(duration)
+        if duration > sendPackets:
+            droppedPackets = duration-sendPackets
+            yield put, self, self.sim.load_balancer, sendPackets  # offer a duration to load_balancer
+            self.sim.burst_duration_monitor.observe(sendPackets)
+            packetDropMonitor.observe(droppedPackets)
+        else:
+            yield put, self, self.sim.load_balancer, duration  # offer a duration to load_balancer
+            self.sim.burst_duration_monitor.observe(duration)
 
 
 class Host(Process):
@@ -93,7 +102,7 @@ class Model(Simulation):
         self.host_params = host_params
         return
 
-    def runModel(self, start_time, end_time):
+    def runModel(self, start_time, end_time, packetDropMonitor):
         # monitor the burst duration
         self.burst_duration_monitor = Monitor(name='Pareto distribution', sim=self)
         self.initialize()
@@ -107,7 +116,7 @@ class Model(Simulation):
                                    sim=self)
         burst_source = Source(name='Source', sim=self)
         self.activate(burst_source,
-                      burst_source.generate(self.packet_params),
+                      burst_source.generate(self.packet_params,packetDropMonitor=packetDropMonitor),
                       at=start_time)  # priority is now
 
         for i in xrange(self.host_params["count"]):
@@ -116,7 +125,16 @@ class Model(Simulation):
 
         self.simulate(until=end_time)
 
-        return self.burst_duration_monitor  # packet drop monitor , load balancer monitor, server_monitor
+# <<<<<<< HEAD
+#         # print burst statistics
+#         for i in xrange(len(self.burst_duration_monitor)):
+#             print 'Duration {}'.format(self.burst_duration_monitor[i])
+
+#         result = self.burst_duration_monitor.count(), self.burst_duration_monitor.mean()
+#         print("Average duration of %3d bursts was %5.3f milliseconds." % result)
+        # print(packetDropMonitor.total())
+
+        return self.burst_duration_monitor, packetDropMonitor  # packet drop monitor , load balancer monitor, server_monitor
 
 
 def main():
@@ -125,12 +143,13 @@ def main():
         sys.exit("Must specifiy experiment name and parameter file!")
 
     ## Experiment data ---------------------------------------------------------
+    packetDropMonitor = Monitor()
     name = sys.argv[1]
     with open(sys.argv[2]) as parameter_file:
         params = json.load(parameter_file)
         time = params["time"]
 
-    ## Experiment --------------------------------------------------------------
+    ## Experiment -------------------------------------------------------------
         if params["seed"]:
             seed(params["seed"])
 
@@ -138,7 +157,7 @@ def main():
                         packet_params=params["packet"],
                         load_balancer_capacity=params["load-balancer-capacity"],
                         host_params=params["host"])
-        burst_monitor = myModel.runModel(time["start"], time["end"])
+        burst_monitor = myModel.runModel(time["start"], time["end"],packetDropMonitor)
 
     ## Analysis ----------------------------------------------------------------
 
