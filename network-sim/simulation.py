@@ -42,11 +42,11 @@ class Source(Process):
             # arrival time of burst a Poisson distr
             interarrival_time = expovariate(1.0 / meanTBA)
             yield hold, self, interarrival_time  # hold suspends until interarrival time has passed
+            print "%s arrived at %s" % (self.name, self.sim.now())
 
             # generate duration
             # Pareto distribution for burst durtion
-            duration = ceil(paretovariate(packet_duration_concentration)) + min_packet_duration
-            print "%s arrived at %s w/ duration = %s" % (self.name, self.sim.now(), duration)
+            duration = ceil(paretovariate(packet_duration_concentration)) * min_packet_duration
 
             # activate burst with a duration and load balancer
             self.sim.activate(burst, burst.visit(duration))
@@ -174,22 +174,31 @@ def main():
         time = params["time"]
 
     ## Experiment -------------------------------------------------------------
-        if params["seed"]:
-            seed(params["seed"])
+        # if params["seed"]:
+        #     seed(params["seed"])
 
         myModel = Model(name=name,
                         packet_params=params["packet"],
                         load_balancer_capacity=params["load-balancer-capacity"],
                         host_params=params["host"])
-        burst_monitor, packet_drop_monitor, load_balancer_monitor, server_monitor = myModel.runModel(time["start"], time["end"])
+
+        seeds = params["seed"]
+        if not isinstance(seeds, list):
+            seeds = [seeds]
+        index = 0                                       # index for file naming conventions, multiple sim runs
+        for aSeed in seeds:                             # five sim runs, each with a unique seed as listed above
+            seed(aSeed)
+            burst_monitor, packet_drop_monitor, load_balancer_monitor, server_monitor = myModel.runModel(time["start"], time["end"])
 
     ## Analysis ----------------------------------------------------------------
 
     ## Output ------------------------------------------------------------------
-    dump_monitor(burst_monitor, name, "burst")
-    dump_monitor(packet_drop_monitor, name, "packetdrop")
-    dump_monitor(load_balancer_monitor, name, "loadbalancer")
-    dump_monitor(server_monitor, name, "serverutilization")
+            dump_monitor(burst_monitor, "{0}-{1}".format(name, index), "burst")
+            dump_monitor(packet_drop_monitor, "{0}-{1}".format(name, index), "packetdrop")
+            dump_monitor(load_balancer_monitor, "{0}-{1}".format(name, index), "loadbalancer")
+            dump_monitor(server_monitor, "{0}-{1}".format(name, index), "serverutilization")
+
+            index += 1
 
 if __name__ == '__main__':
     main()
