@@ -134,22 +134,23 @@ class Model(Simulation):
 
 
 def dump_monitor(monitor, fd):
-    fd.write("=== Stats ===\n")
-    fd.write("observations = %3d\n" % monitor.count())
-    fd.write("total = %3d\n" % monitor.total())
-    fd.write("mean = %5.3f\n" % monitor.mean())
-    fd.write("var = %5.3f\n" % monitor.var())
-    fd.write("stddev = %5.3f\n" % sqrt(monitor.var()))
-    fd.write("time-mean = %5.3f\n" % monitor.timeAverage())
-    fd.write("time-var = %5.3f\n" % monitor.timeAverage())
-    fd.write("time-stddev = %5.3f\n" % sqrt(monitor.timeAverage()))
-    fd.write("------------\n")
+    if(monitor.count()>0):
+        fd.write("=== Stats ===\n")
+        fd.write("observations = %3d\n" % monitor.count())
+        fd.write("total = %3d\n" % monitor.total())
+        fd.write("mean = %5.3f\n" % monitor.mean())
+        fd.write("var = %5.3f\n" % monitor.var())
+        fd.write("stddev = %5.3f\n" % sqrt(monitor.var()))
+        fd.write("time-mean = %5.3f\n" % monitor.timeAverage())
+        fd.write("time-var = %5.3f\n" % monitor.timeAverage())
+        fd.write("time-stddev = %5.3f\n" % sqrt(monitor.timeAverage()))
+        fd.write("------------\n")
 
-    fd.write("=== Data ===\n")
-    fd.write("t,length\n")
-    for burst_data in monitor:
-        fd.write("{0}\n".format(",".join(map(str, burst_data))))
-    fd.write("------------\n")
+        fd.write("=== Data ===\n")
+        fd.write("t,length\n")
+        for burst_data in monitor:
+            fd.write("{0}\n".format(",".join(map(str, burst_data))))
+        fd.write("------------\n")
 
 
 def main():
@@ -164,28 +165,38 @@ def main():
         time = params["time"]
 
     ## Experiment -------------------------------------------------------------
-        if params["seed"]:
-            seed(params["seed"])
+        # if params["seed"]:
+        #     seed(params["seed"])
 
         myModel = Model(name=name,
                         packet_params=params["packet"],
                         load_balancer_capacity=params["load-balancer-capacity"],
                         host_params=params["host"])
-        burst_monitor, packet_drop_monitor, load_balancer_monitor, server_monitor = myModel.runModel(time["start"], time["end"])
+        
+        seeds = params["seed"]
+        if not isinstance(seeds, list):
+            seeds = [seeds]
+        index = 0                                       # index for file naming conventions, multiple sim runs
+        for aSeed in seeds:                             # five sim runs, each with a unique seed as listed above
+            seed(aSeed)
+            burst_monitor, packet_drop_monitor, load_balancer_monitor, server_monitor = myModel.runModel(time["start"], time["end"])
 
     ## Analysis ----------------------------------------------------------------
 
     ## Output ------------------------------------------------------------------
-    with open("{0}-burst.out".format(name), "wb") as burst_out_file:
-        dump_monitor(burst_monitor, burst_out_file)
+            with open("{0}-burst{1}.out".format(name, index), "wb") as burst_out_file:
+                dump_monitor(burst_monitor, burst_out_file)
 
-    with open("{0}-packetdrop.out".format(name), "wb") as packetdrop_out_file:
-        dump_monitor(packet_drop_monitor, packetdrop_out_file)
+            with open("{0}-packetdrop{1}.out".format(name, index), "wb") as packetdrop_out_file:
+                dump_monitor(packet_drop_monitor, packetdrop_out_file)
 
-    with open("{0}-loadbalancer.out".format(name), "wb") as loadbalancer_out_file:
-        dump_monitor(load_balancer_monitor, loadbalancer_out_file)
+            with open("{0}-loadbalancer{1}.out".format(name, index), "wb") as loadbalancer_out_file:
+                dump_monitor(load_balancer_monitor, loadbalancer_out_file)
 
-    with open("{0}-serverutilization.out".format(name), "wb") as serverutilization_out_file:
-        dump_monitor(server_monitor, serverutilization_out_file)
+            with open("{0}-serverutilization{1}.out".format(name, index), "wb") as serverutilization_out_file:
+                dump_monitor(server_monitor, serverutilization_out_file)
+
+            index += 1
+            
 if __name__ == '__main__':
     main()
