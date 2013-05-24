@@ -46,7 +46,7 @@ class Source(Process):
 
             # generate duration
             # Pareto distribution for burst durtion
-            duration = ceil(paretovariate(packet_duration_concentration)) * min_packet_duration
+            duration = ceil(paretovariate(packet_duration_concentration) * min_packet_duration)
 
             # activate burst with a duration and load balancer
             self.sim.activate(burst, burst.visit(duration))
