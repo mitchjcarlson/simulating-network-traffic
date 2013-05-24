@@ -42,11 +42,11 @@ class Source(Process):
             # arrival time of burst a Poisson distr
             interarrival_time = expovariate(1.0 / meanTBA)
             yield hold, self, interarrival_time  # hold suspends until interarrival time has passed
-            print "%s arrived at %s" % (self.name, self.sim.now())
 
             # generate duration
             # Pareto distribution for burst durtion
             duration = ceil(paretovariate(packet_duration_concentration)) + min_packet_duration
+            print "%s arrived at %s w/ duration = %s" % (self.name, self.sim.now(), duration)
 
             # activate burst with a duration and load balancer
             self.sim.activate(burst, burst.visit(duration))
@@ -61,7 +61,7 @@ class Burst(Process):
     """
 
     def visit(self, duration):
-        print "Add %s packets to load balancer" % duration
+        #print "Add %s packets to load balancer" % duration
         capacity = self.sim.load_balancer.capacity
         amount = self.sim.load_balancer.amount
         sendPackets = capacity-amount
@@ -75,23 +75,30 @@ class Burst(Process):
             yield put, self, self.sim.load_balancer, duration  # offer a duration to load_balancer
             self.sim.burst_duration_monitor.observe(duration)
 
+        self.sim.PacketArrived.signal()
+
 
 class Host(Process):
     """
     Processes packets in load balancer.
     """
 
-    def process(self, num_packets):
+    def process(self, max_capacity):
         while True:
-            # pull packets from load balancer
-            yield get, self, self.sim.load_balancer, num_packets
-            print "[%s]: Process %s packets in load balancer at %s" % (self.name, num_packets, self.sim.now())
-            # generate service time
-            process_time = num_packets
-            # stay busy until service time expires
-            arrive = self.sim.now()
-            yield hold, self, process_time
-            self.sim.host_monitor.observe(self.sim.now() - arrive)
+            if self.sim.load_balancer.amount < 1:
+                start = self.sim.now()
+                yield waitevent, self, self.sim.PacketArrived
+                self.sim.host_monitor.observe(self.sim.now() - start)
+            else:
+                num_packets = max_capacity
+                if self.sim.load_balancer.amount < max_capacity:
+                    num_packets = self.sim.load_balancer.amount
+
+                # pull packets from load balancer
+                yield get, self, self.sim.load_balancer, num_packets
+                print "[%s]: Process %s packets in load balancer at %s" % (self.name, num_packets, self.sim.now())
+                # stay busy until service time expires
+                yield hold, self, 1
 
 
 class Model(Simulation):
@@ -110,6 +117,8 @@ class Model(Simulation):
         self.packetDropMonitor = Monitor(name="Packet Drop", sim=self)
         self.host_monitor = Monitor(name="Host", sim=self)
 
+        self.PacketArrived = SimEvent(name="Packet Arrived", sim=self)
+
         self.initialize()
 
         # Represents queue in load balancer
@@ -126,30 +135,31 @@ class Model(Simulation):
 
         for i in xrange(self.host_params["count"]):
             host = Host(name="Host %s" % i, sim=self)
-            self.activate(host, host.process(self.host_params["capacity"]))
+            self.activate(host, host.process(self.host_params["max-capacity"]))
 
         self.simulate(until=end_time)
 
         return self.burst_duration_monitor, self.packetDropMonitor, self.load_balancer.bufferMon, self.host_monitor
 
 
-def dump_monitor(monitor, fd):
-    fd.write("=== Stats ===\n")
-    fd.write("observations = %3d\n" % monitor.count())
-    fd.write("total = %3d\n" % monitor.total())
-    fd.write("mean = %5.3f\n" % monitor.mean())
-    fd.write("var = %5.3f\n" % monitor.var())
-    fd.write("stddev = %5.3f\n" % sqrt(monitor.var()))
-    fd.write("time-mean = %5.3f\n" % monitor.timeAverage())
-    fd.write("time-var = %5.3f\n" % monitor.timeAverage())
-    fd.write("time-stddev = %5.3f\n" % sqrt(monitor.timeAverage()))
-    fd.write("------------\n")
+def dump_monitor(monitor, testname, monitorname):
+    with open("{0}-{1}-stats.out".format(testname, monitorname), "wb") as fd:
+        fd.write("observations = %3d\n" % monitor.count())
+        fd.write("total = %3d\n" % monitor.total())
+        if monitor.count() is 0:
+            fd.write("mean = 0\n")
+            fd.write("var = 0\n")
+            fd.write("stddev = 0\n")
+        else:
+            fd.write("mean = %5.3f\n" % monitor.mean())
+            fd.write("var = %5.3f\n" % monitor.var())
+            fd.write("stddev = %5.3f\n" % sqrt(monitor.var()))
+        fd.write("time-mean = %5.3f\n" % (monitor.timeAverage() or float(0.0)))
 
-    fd.write("=== Data ===\n")
-    fd.write("t,length\n")
-    for burst_data in monitor:
-        fd.write("{0}\n".format(",".join(map(str, burst_data))))
-    fd.write("------------\n")
+    with open("{0}-{1}-data.out".format(testname, monitorname), "wb") as fd:
+        fd.write("t,length\n")
+        for data in monitor:
+            fd.write("{0}\n".format(",".join(map(str, data))))
 
 
 def main():
@@ -176,16 +186,10 @@ def main():
     ## Analysis ----------------------------------------------------------------
 
     ## Output ------------------------------------------------------------------
-    with open("{0}-burst.out".format(name), "wb") as burst_out_file:
-        dump_monitor(burst_monitor, burst_out_file)
+    dump_monitor(burst_monitor, name, "burst")
+    dump_monitor(packet_drop_monitor, name, "packetdrop")
+    dump_monitor(load_balancer_monitor, name, "loadbalancer")
+    dump_monitor(server_monitor, name, "serverutilization")
 
-    with open("{0}-packetdrop.out".format(name), "wb") as packetdrop_out_file:
-        dump_monitor(packet_drop_monitor, packetdrop_out_file)
-
-    with open("{0}-loadbalancer.out".format(name), "wb") as loadbalancer_out_file:
-        dump_monitor(load_balancer_monitor, loadbalancer_out_file)
-
-    with open("{0}-serverutilization.out".format(name), "wb") as serverutilization_out_file:
-        dump_monitor(server_monitor, serverutilization_out_file)
 if __name__ == '__main__':
     main()
