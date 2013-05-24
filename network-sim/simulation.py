@@ -15,7 +15,7 @@
 ## Model components ------------------------------------------------------------
 from SimPy.Simulation import *
 from random import expovariate, paretovariate, seed
-from math import ceil
+from math import ceil, sqrt
 import json
 import sys
 
@@ -125,13 +125,16 @@ class Model(Simulation):
 
         self.simulate(until=end_time)
 
-        # print burst statistics
-        for i in xrange(len(self.burst_duration_monitor)):
-            print 'Duration {}'.format(self.burst_duration_monitor[i])
+# <<<<<<< HEAD
+#         # print burst statistics
+#         for i in xrange(len(self.burst_duration_monitor)):
+#             print 'Duration {}'.format(self.burst_duration_monitor[i])
 
-        result = self.burst_duration_monitor.count(), self.burst_duration_monitor.mean()
-        print("Average duration of %3d bursts was %5.3f milliseconds." % result)
-        print(packetDropMonitor.total())
+#         result = self.burst_duration_monitor.count(), self.burst_duration_monitor.mean()
+#         print("Average duration of %3d bursts was %5.3f milliseconds." % result)
+        # print(packetDropMonitor.total())
+
+        return self.burst_duration_monitor, packetDropMonitor  # packet drop monitor , load balancer monitor, server_monitor
 
 
 def main():
@@ -154,13 +157,24 @@ def main():
                         packet_params=params["packet"],
                         load_balancer_capacity=params["load-balancer-capacity"],
                         host_params=params["host"])
-        myModel.runModel(time["start"], time["end"],packetDropMonitor)
-        print myModel.now()
+        burst_monitor = myModel.runModel(time["start"], time["end"],packetDropMonitor)
 
     ## Analysis ----------------------------------------------------------------
 
     ## Output ------------------------------------------------------------------
+    with open("{0}-burst.out".format(name), "wb") as burst_out_file:
+        burst_out_file.write("=== Stats ===\n")
+        burst_out_file.write("count = %3d\n" % burst_monitor.count())
+        burst_out_file.write("mean = %5.3f\n" % burst_monitor.mean())
+        burst_out_file.write("var = %5.3f\n" % burst_monitor.var())
+        burst_out_file.write("stddev = %5.3f\n" % sqrt(burst_monitor.var()))
+        burst_out_file.write("------------\n")
 
+        burst_out_file.write("=== Data ===\n")
+        burst_out_file.write("t,length\n")
+        for burst_data in burst_monitor:
+            burst_out_file.write("{0}\n".format(",".join(map(str, burst_data))))
+        burst_out_file.write("------------\n")
 
 if __name__ == '__main__':
     main()
