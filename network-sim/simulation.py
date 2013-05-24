@@ -122,7 +122,7 @@ class Model(Simulation):
 def main():
     if len(sys.argv) < 3:
         print "usage: {0} <experiment-name> <parameter file>".format(sys.argv[0])
-        sys.exit("Must specifiy parameter file!")
+        sys.exit("Must specifiy experiment name and parameter file!")
 
     ## Experiment data ---------------------------------------------------------
     name = sys.argv[1]
