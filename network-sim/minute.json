@@ -1,13 +1,13 @@
 {
     "packet" : {
         "mean-arrival" : 100,
-        "min-duration" : 40,
+        "min-duration" : 50,
         "duration-concentration" : 1.0
     },
-    "load-balancer-capacity" : 100,
+    "load-balancer-capacity" : 500,
     "host" : {
-        "count" : 3,
-        "capacity" : 300
+        "count" : 100,
+        "capacity" : 2
     },
     "time" : {
         "start" : 0.0,

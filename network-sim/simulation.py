@@ -27,7 +27,7 @@ class Source(Process):
     Randomly generates bursts
     """
 
-    def generate(self, packet_params, packetDropMonitor):  # generates bursts
+    def generate(self, packet_params):  # generates bursts
         meanTBA = packet_params["mean-arrival"]
         min_packet_duration = packet_params["min-duration"]
         packet_duration_concentration = packet_params["duration-concentration"]
@@ -49,7 +49,7 @@ class Source(Process):
             duration = ceil(paretovariate(packet_duration_concentration)) + min_packet_duration
 
             # activate burst with a duration and load balancer
-            self.sim.activate(burst, burst.visit(duration, packetDropMonitor))
+            self.sim.activate(burst, burst.visit(duration))
 
             i += 1
 
@@ -60,7 +60,7 @@ class Burst(Process):
     Has a random, fixed duration.
     """
 
-    def visit(self, duration, packetDropMonitor):
+    def visit(self, duration):
         print "Add %s packets to load balancer" % duration
         capacity = self.sim.load_balancer.capacity
         amount = self.sim.load_balancer.amount
@@ -70,7 +70,7 @@ class Burst(Process):
             droppedPackets = duration-sendPackets
             yield put, self, self.sim.load_balancer, sendPackets  # offer a duration to load_balancer
             self.sim.burst_duration_monitor.observe(sendPackets)
-            packetDropMonitor.observe(droppedPackets)
+            self.sim.packetDropMonitor.observe(droppedPackets)
         else:
             yield put, self, self.sim.load_balancer, duration  # offer a duration to load_balancer
             self.sim.burst_duration_monitor.observe(duration)
@@ -89,7 +89,9 @@ class Host(Process):
             # generate service time
             process_time = num_packets
             # stay busy until service time expires
+            arrive = self.sim.now()
             yield hold, self, process_time
+            self.sim.host_monitor.observe(self.sim.now() - arrive)
 
 
 class Model(Simulation):
@@ -102,9 +104,12 @@ class Model(Simulation):
         self.host_params = host_params
         return
 
-    def runModel(self, start_time, end_time, packetDropMonitor):
+    def runModel(self, start_time, end_time):
         # monitor the burst duration
-        self.burst_duration_monitor = Monitor(name='Pareto distribution', sim=self)
+        self.burst_duration_monitor = Monitor(name="Bursts", sim=self)
+        self.packetDropMonitor = Monitor(name="Packet Drop", sim=self)
+        self.host_monitor = Monitor(name="Host", sim=self)
+
         self.initialize()
 
         # Represents queue in load balancer
@@ -112,11 +117,11 @@ class Model(Simulation):
                                    capacity=self.load_balancer_capacity,
                                    initialBuffered=0,
                                    putQType=FIFO, getQType=FIFO,
-                                   monitored=False, monitorType=Monitor,
+                                   monitored=True, monitorType=Monitor,
                                    sim=self)
         burst_source = Source(name='Source', sim=self)
         self.activate(burst_source,
-                      burst_source.generate(self.packet_params,packetDropMonitor=packetDropMonitor),
+                      burst_source.generate(self.packet_params),
                       at=start_time)  # priority is now
 
         for i in xrange(self.host_params["count"]):
@@ -125,16 +130,26 @@ class Model(Simulation):
 
         self.simulate(until=end_time)
 
-# <<<<<<< HEAD
-#         # print burst statistics
-#         for i in xrange(len(self.burst_duration_monitor)):
-#             print 'Duration {}'.format(self.burst_duration_monitor[i])
+        return self.burst_duration_monitor, self.packetDropMonitor, self.load_balancer.bufferMon, self.host_monitor
 
-#         result = self.burst_duration_monitor.count(), self.burst_duration_monitor.mean()
-#         print("Average duration of %3d bursts was %5.3f milliseconds." % result)
-        # print(packetDropMonitor.total())
 
-        return self.burst_duration_monitor, packetDropMonitor  # packet drop monitor , load balancer monitor, server_monitor
+def dump_monitor(monitor, fd):
+    fd.write("=== Stats ===\n")
+    fd.write("observations = %3d\n" % monitor.count())
+    fd.write("total = %3d\n" % monitor.total())
+    fd.write("mean = %5.3f\n" % monitor.mean())
+    fd.write("var = %5.3f\n" % monitor.var())
+    fd.write("stddev = %5.3f\n" % sqrt(monitor.var()))
+    fd.write("time-mean = %5.3f\n" % monitor.timeAverage())
+    fd.write("time-var = %5.3f\n" % monitor.timeAverage())
+    fd.write("time-stddev = %5.3f\n" % sqrt(monitor.timeAverage()))
+    fd.write("------------\n")
+
+    fd.write("=== Data ===\n")
+    fd.write("t,length\n")
+    for burst_data in monitor:
+        fd.write("{0}\n".format(",".join(map(str, burst_data))))
+    fd.write("------------\n")
 
 
 def main():
@@ -143,7 +158,6 @@ def main():
         sys.exit("Must specifiy experiment name and parameter file!")
 
     ## Experiment data ---------------------------------------------------------
-    packetDropMonitor = Monitor()
     name = sys.argv[1]
     with open(sys.argv[2]) as parameter_file:
         params = json.load(parameter_file)
@@ -157,24 +171,21 @@ def main():
                         packet_params=params["packet"],
                         load_balancer_capacity=params["load-balancer-capacity"],
                         host_params=params["host"])
-        burst_monitor = myModel.runModel(time["start"], time["end"],packetDropMonitor)
+        burst_monitor, packet_drop_monitor, load_balancer_monitor, server_monitor = myModel.runModel(time["start"], time["end"])
 
     ## Analysis ----------------------------------------------------------------
 
     ## Output ------------------------------------------------------------------
     with open("{0}-burst.out".format(name), "wb") as burst_out_file:
-        burst_out_file.write("=== Stats ===\n")
-        burst_out_file.write("count = %3d\n" % burst_monitor.count())
-        burst_out_file.write("mean = %5.3f\n" % burst_monitor.mean())
-        burst_out_file.write("var = %5.3f\n" % burst_monitor.var())
-        burst_out_file.write("stddev = %5.3f\n" % sqrt(burst_monitor.var()))
-        burst_out_file.write("------------\n")
+        dump_monitor(burst_monitor, burst_out_file)
 
-        burst_out_file.write("=== Data ===\n")
-        burst_out_file.write("t,length\n")
-        for burst_data in burst_monitor:
-            burst_out_file.write("{0}\n".format(",".join(map(str, burst_data))))
-        burst_out_file.write("------------\n")
+    with open("{0}-packetdrop.out".format(name), "wb") as packetdrop_out_file:
+        dump_monitor(packet_drop_monitor, packetdrop_out_file)
 
+    with open("{0}-loadbalancer.out".format(name), "wb") as loadbalancer_out_file:
+        dump_monitor(load_balancer_monitor, loadbalancer_out_file)
+
+    with open("{0}-serverutilization.out".format(name), "wb") as serverutilization_out_file:
+        dump_monitor(server_monitor, serverutilization_out_file)
 if __name__ == '__main__':
     main()
