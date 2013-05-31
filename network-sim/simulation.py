@@ -5,7 +5,7 @@
 # Model:       Uses a Poisson-Pareto burst process with a single queue and
 #              multiple servers
 
-# Author:      Brendan Sweeny, Derek McLean, Mitch Carlson
+# Author:      Brendan Sweeny, Mitch Carlson, Derek McLean
 #
 # Created:     2013-05-13
 #-------------------------------------------------------------------------------
@@ -41,12 +41,14 @@ class Source(Process):
             # yield to next burst time
             # arrival time of burst a Poisson distr
             interarrival_time = expovariate(1.0 / meanTBA)
-            yield hold, self, interarrival_time  # hold suspends until interarrival time has passed
-            print "%s arrived at %s" % (self.name, self.sim.now())
+            # hold suspends until interarrival time has passed
+            yield hold, self, interarrival_time
+            #print "%s arrived at %s" % (self.name, self.sim.now())
 
             # generate duration
             # Pareto distribution for burst durtion
-            duration = ceil(paretovariate(packet_duration_concentration)) + min_packet_duration
+            duration = ceil(paretovariate(packet_duration_concentration)) +
+                       min_packet_duration
 
             # activate burst with a duration and load balancer
             self.sim.activate(burst, burst.visit(duration))
@@ -68,11 +70,13 @@ class Burst(Process):
 
         if duration > sendPackets:
             droppedPackets = duration-sendPackets
-            yield put, self, self.sim.load_balancer, sendPackets  # offer a duration to load_balancer
+            # offer a duration to load_balancer
+            yield put, self, self.sim.load_balancer, sendPackets
             self.sim.burst_duration_monitor.observe(sendPackets)
             self.sim.packetDropMonitor.observe(droppedPackets)
         else:
-            yield put, self, self.sim.load_balancer, duration  # offer a duration to load_balancer
+            # offer a duration to load_balancer
+            yield put, self, self.sim.load_balancer, duration
             self.sim.burst_duration_monitor.observe(duration)
 
         self.sim.PacketArrived.signal()
@@ -96,9 +100,10 @@ class Host(Process):
 
                 # pull packets from load balancer
                 yield get, self, self.sim.load_balancer, num_packets
-                print "[%s]: Process %s packets in load balancer at %s" % (self.name, num_packets, self.sim.now())
+                #print "[%s]: Process %s packets in load balancer at %s" %
+                #      (self.name, num_packets, self.sim.now())
                 # stay busy until service time expires
-                yield hold, self, 1
+                yield hold, self, num_packets / 4.0
 
 
 class Model(Simulation):
@@ -139,7 +144,8 @@ class Model(Simulation):
 
         self.simulate(until=end_time)
 
-        return self.burst_duration_monitor, self.packetDropMonitor, self.load_balancer.bufferMon, self.host_monitor
+        return self.burst_duration_monitor, self.packetDropMonitor,
+               self.load_balancer.bufferMon, self.host_monitor
 
 
 def dump_monitor(monitor, testname, monitorname):
@@ -156,10 +162,11 @@ def dump_monitor(monitor, testname, monitorname):
             fd.write("stddev = %5.3f\n" % sqrt(monitor.var()))
         fd.write("time-mean = %5.3f\n" % (monitor.timeAverage() or float(0.0)))
 
-    with open("{0}-{1}-data.out".format(testname, monitorname), "wb") as fd:
-        fd.write("t,length\n")
-        for data in monitor:
-            fd.write("{0}\n".format(",".join(map(str, data))))
+    if monitorname != "serverutilization":
+        with open("{0}-{1}-data.out".format(testname, monitorname), "wb") as fd:
+            fd.write("t,length\n")
+            for data in monitor:
+                fd.write("{0}\n".format(",".join(map(str, data))))
 
 
 def main():
@@ -185,10 +192,11 @@ def main():
         seeds = params["seed"]
         if not isinstance(seeds, list):
             seeds = [seeds]
-        index = 0                                       # index for file naming conventions, multiple sim runs
-        for aSeed in seeds:                             # five sim runs, each with a unique seed as listed above
+        index = 0           # index for file naming conventions, multiple sim runs
+        for aSeed in seeds: # five sim runs, each with a unique seed as listed above
             seed(aSeed)
-            burst_monitor, packet_drop_monitor, load_balancer_monitor, server_monitor = myModel.runModel(time["start"], time["end"])
+            burst_monitor, packet_drop_monitor, load_balancer_monitor, server_monitor =
+             myModel.runModel(time["start"], time["end"])
 
     ## Analysis ----------------------------------------------------------------
 
